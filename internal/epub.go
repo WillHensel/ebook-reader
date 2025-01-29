@@ -5,7 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
-	"log"
+	"regexp"
 )
 
 type Epub struct {
@@ -16,31 +16,41 @@ func ReadEpub(path string) (Epub, error) {
 
 	r, err := zip.OpenReader(path)
 	if err != nil {
-		log.Fatal(err)
+		return Epub{}, err
 	}
 	defer r.Close()
 
-	m, err := r.Open("OEBPS/content.opf")
-	if err != nil {
-		log.Fatal(err)
+	pat := regexp.MustCompile(`.*\.opf`)
+	for _, f := range r.File {
+		if pat.MatchString(f.Name) {
+			epub, err := readFromManifest(f)
+			if err != nil {
+				return Epub{}, err
+			}
+
+			return epub, nil
+		}
 	}
 
-	info, err := m.Stat()
+	return Epub{}, errors.New("epub manifest file not found")
+}
+
+func readFromManifest(f *zip.File) (Epub, error) {
+	m, err := f.Open()
 	if err != nil {
-		log.Fatal(err)
+		return Epub{}, err
 	}
 
-	m_bytes := make([]byte, info.Size())
-	_, err = m.Read(m_bytes)
+	m_bytes, err := io.ReadAll(m)
 	if err != nil && !errors.Is(err, io.EOF) {
-		log.Fatal(err)
+		return Epub{}, err
 	}
 	m.Close()
 
 	var epub Epub
 	err = xml.Unmarshal(m_bytes, &epub)
 	if err != nil {
-		log.Fatal(err)
+		return Epub{}, err
 	}
 
 	return epub, nil
